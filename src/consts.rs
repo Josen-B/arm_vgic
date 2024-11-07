@@ -1,18 +1,52 @@
 pub(crate) const SGI_ID_MAX: usize = 16;
 pub(crate) const PPI_ID_MAX: usize = 32; /* 16...31 */
 pub(crate) const SPI_ID_MAX: usize = 512;
-pub(crate) const GICD_LR_NUM: usize = 4;
+pub(crate) const GICH_LR_NUM: usize = 4;
 
-/* ============ handler use offset ============= */
-pub(crate) const VGICD_CTLR: usize = 0x0;
-pub(crate) const VGICD_ISENABLER_SGI_PPI: usize = 0x0100;
-pub(crate) const VGICD_ISENABLER_SPI: usize = 0x0104;
-pub(crate) const VGICD_ICENABLER_SGI_PPI: usize = 0x0180;
-pub(crate) const VGICD_ICENABLER_SPI: usize = 0x0184;
+/* ============ GicDistributorRegs handler use offset ============= */
+pub(crate) const VGICD_CTRL: usize = 0x0000;
+pub(crate) const VGICD_TYPER: usize = 0x0004;
+pub(crate) const VGICD_IIDR: usize = 0x0008;
+pub(crate) const VGICD_IGROUPR_X: usize = 0x0080;
+pub(crate) const VGICD_ISENABLER_X: usize = 0x0100;
+pub(crate) const VGICD_ICENABLER_X: usize = 0x0180;
+pub(crate) const VGICD_ISPENDER_X: usize = 0x0200;
+pub(crate) const VGICD_ICPENDER_X: usize = 0x0280;
+pub(crate) const VGICD_ISACTIVER_X: usize = 0x0300;
+pub(crate) const VGICD_ICACTIVER_X: usize = 0x0380;
+pub(crate) const VGICD_IPRIORITYR_X: usize = 0x0400;
+pub(crate) const VGICD_ITARGETSR_X: usize = 0x0800;
+pub(crate) const VGICD_ICFGR_X: usize = 0x0c00;
+pub(crate) const VGICD_PPISR: usize = 0x0d00;
+pub(crate) const VGICD_SPISR_X: usize = 0x0d04;
+pub(crate) const VGICD_NSACR_X: usize = 0x0e00;
+pub(crate) const VGICD_SGIR: usize = 0x0f00;
+pub(crate) const VGICD_CPENDSGIR_X: usize = 0x0f10;
+pub(crate) const VGICD_SPENDSGIR_X: usize = 0x0f20;
 
-pub(crate) const VGICD_ISPENDR: usize = 0x0200;
-pub(crate) const VGICD_ICPENDR: usize = 0x5;
-pub(crate) const VGICD_ISACTIVER: usize = 0x6;
-pub(crate) const VGICD_ICACTIVER: usize = 0x7;
-pub(crate) const VGICD_ICFGR: usize = 0x18;
-pub(crate) const VGICD_SGIR: usize = 0x1e;
+pub(crate) const VGICC_CTRL: usize = 0x0000;
+pub(crate) const VGICC_PMR: usize = 0x0004;
+pub(crate) const VGICC_BPR: usize = 0x0008;
+pub(crate) const VGICC_IAR: usize = 0x000c;
+pub(crate) const VGICC_EOIR: usize = 0x0010;
+pub(crate) const VGICC_RPR: usize = 0x0014;
+pub(crate) const VGICC_HPPIR: usize = 0x0018;
+pub(crate) const VGICC_ABPR: usize = 0x001c;
+pub(crate) const VGICC_AIAR: usize = 0x0020;
+pub(crate) const VGICC_AEOIR: usize = 0x0024;
+pub(crate) const VGICC_AHPPIR: usize = 0x0028;
+pub(crate) const VGICC_APR_X: usize = 0x00d0;
+pub(crate) const VGICC_NSAPR_X: usize = 0x00e0;
+pub(crate) const VGICC_IIDR: usize = 0x00fc;
+pub(crate) const VGICC_DIR: usize = 0x1000;
+
+pub(crate) const VGICH_HCR: usize = 0x0000;
+pub(crate) const VGICH_VTR: usize = 0x0004;
+pub(crate) const VGICH_VMCR: usize = 0x0008;
+pub(crate) const VGICH_MISR: usize = 0x0010;
+pub(crate) const VGICH_EISR0: usize = 0x0020;
+pub(crate) const VGICH_EISR1: usize = 0x0024;
+pub(crate) const VGICH_ELSR0: usize = 0x0030;
+pub(crate) const VGICH_ELSR1: usize = 0x0034;
+pub(crate) const VGICH_APR: usize = 0x00f0;
+pub(crate) const VGICH_LR_X: usize = 0x0100;

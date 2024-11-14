@@ -31,14 +31,14 @@ struct CoreState {
 
 struct VgicInner {
     used_irq: [u32; SPI_ID_MAX / 32],
-    ptov: [u32; SPI_ID_MAX],
-    vtop: [u32; SPI_ID_MAX],
+    ptov: [i32; SPI_ID_MAX],
+    vtop: [i32; SPI_ID_MAX],
     gicc: Vec<Vgicc>,
 
     ctrlr: u32,
     typer: u32,
     iidr: u32,
-    real_pri: u32,
+    real_pri: u8,
 
     core_state: Vec<CoreState>,
 
@@ -85,13 +85,13 @@ impl Vgic {
     fn init(this: &mut Self) {
         let mut vgic = this.inner.lock();
         for i in 0..SGI_ID_MAX {
-            vgic.ptov[i] = i as u32;
-            vgic.vtop[i] = i as u32;
+            vgic.ptov[i] = i as i32;
+            vgic.vtop[i] = i as i32;
         }
 
         for i in SGI_ID_MAX..SPI_ID_MAX {
-            vgic.ptov[i] = u32::MAX;
-            vgic.vtop[i] = u32::MAX;
+            vgic.ptov[i] = -1;
+            vgic.vtop[i] = -1;
         }
 
         for i in 0..SPI_ID_MAX / 32 {
@@ -132,6 +132,14 @@ impl Vgic {
         vgic.real_pri = 0;
     }
 
+    pub fn inject(&self, vcpu: &dyn VCpuIf, int_id: usize) {
+        let id = vcpu.vcpu_id();
+        if int_id < SGI_ID_MAX {
+        } else if int_id < PPI_ID_MAX {
+        } else if int_id < SPI_ID_MAX {
+        }
+    }
+
     pub(crate) fn handle_read8(&self, addr: usize, vcpu: &dyn VCpuIf) -> AxResult<usize> {
         let value = self.handle_read32(addr, vcpu)?;
         return Ok((value >> (8 * (addr & 0x3))) & 0xff);
@@ -151,11 +159,11 @@ impl Vgic {
                 let id = vcpu.vcpu_id();
                 Ok(self.inner.lock().core_state[id].ppi_isenabler as usize)
             }
-            i if i >= VGICD_ISENABLER_X + 0x04 && i < VGICD_ICENABLER_X => {
-                Ok(self.inner.lock().gicd_isenabler[(i - VGICD_ISENABLER_X) / 4] as usize)
+            idr if idr >= VGICD_ISENABLER_X + 0x04 && idr < VGICD_ICENABLER_X => {
+                Ok(self.inner.lock().gicd_isenabler[(idr - VGICD_ISENABLER_X) / 4] as usize)
             }
-            i if i >= VGICD_ICENABLER_X + 0x04 && i < VGICD_ISPENDER_X => {
-                Ok(self.inner.lock().gicd_isenabler[(i - VGICD_ICENABLER_X) / 4] as usize)
+            idr if idr >= VGICD_ICENABLER_X + 0x04 && idr < VGICD_ISPENDER_X => {
+                Ok(self.inner.lock().gicd_isenabler[(idr - VGICD_ICENABLER_X) / 4] as usize)
             }
             VGICD_ISPENDER_X => {
                 let id = vcpu.vcpu_id();
@@ -168,11 +176,11 @@ impl Vgic {
                 }
                 return Ok(value as usize);
             }
-            i if i >= VGICD_ISPENDER_X + 0x04
-                && i < VGICD_ISPENDER_X + (SPI_ID_MAX / 32) * 0x04 =>
+            idr if idr >= VGICD_ISPENDER_X + 0x04
+                && idr < VGICD_ISPENDER_X + (SPI_ID_MAX / 32) * 0x04 =>
             {
                 let mut value = 0;
-                let idx = i - VGICD_ISPENDER_X / 4;
+                let idx = idr - VGICD_ISPENDER_X / 4;
                 for i in 0..self.vcpu_num {
                     value |= self.inner.lock().core_state[i].irq_no_mask[idx];
                     for j in 0..GICH_LR_NUM {
@@ -184,11 +192,11 @@ impl Vgic {
                 }
                 return Ok(value as usize);
             }
-            i if i >= VGICD_ICPENDER_X + 0x04
-                && i < VGICD_ICPENDER_X + (SPI_ID_MAX / 32) * 0x04 =>
+            idr if idr >= VGICD_ICPENDER_X + 0x04
+                && idr < VGICD_ICPENDER_X + (SPI_ID_MAX / 32) * 0x04 =>
             {
                 let mut value = 0;
-                let idx = i - VGICD_ICPENDER_X / 4;
+                let idx = (idr - VGICD_ICPENDER_X) / 4;
                 for i in 0..self.vcpu_num {
                     value |= self.inner.lock().core_state[i].irq_no_mask[idx];
                     for j in 0..GICH_LR_NUM {
@@ -200,27 +208,29 @@ impl Vgic {
                 }
                 return Ok(value as usize);
             }
-            i if i >= VGICD_IPRIORITYR_X + (PPI_ID_MAX / 4) * 0x04
-                && i <= VGICD_IPRIORITYR_X + (SPI_ID_MAX / 4) * 0x04 =>
+            idr if idr >= VGICD_IPRIORITYR_X + (PPI_ID_MAX / 4) * 0x04
+                && idr <= VGICD_IPRIORITYR_X + (SPI_ID_MAX / 4) * 0x04 =>
             {
                 let id = vcpu.vcpu_id();
                 return Ok(self.inner.lock().core_state[id].ppi_ipriorityr
-                    [i - VGICD_IPRIORITYR_X / 4] as usize);
+                    [idr - VGICD_IPRIORITYR_X / 4] as usize);
             }
-            i if i >= VGICD_ITARGETSR_X && i <= VGICD_ITARGETSR_X + (PPI_ID_MAX / 4) * 0x04 => {
+            idr if idr >= VGICD_ITARGETSR_X
+                && idr <= VGICD_ITARGETSR_X + (PPI_ID_MAX / 4) * 0x04 =>
+            {
                 let id = vcpu.vcpu_id();
                 let value = 1 << id;
                 return Ok(value << 24 | value << 16 | value << 8 as usize);
             }
-            i if i >= VGICD_ITARGETSR_X + (PPI_ID_MAX / 4) * 0x04
-                && i < VGICD_ITARGETSR_X + (SPI_ID_MAX / 4) * 0x04 =>
+            idr if idr >= VGICD_ITARGETSR_X + (PPI_ID_MAX / 4) * 0x04
+                && idr < VGICD_ITARGETSR_X + (SPI_ID_MAX / 4) * 0x04 =>
             {
-                return Ok(self.inner.lock().gicd_itargetsr[(i - VGICD_ITARGETSR_X) / 4] as usize)
+                return Ok(self.inner.lock().gicd_itargetsr[(idr - VGICD_ITARGETSR_X) / 4] as usize)
             }
-            i if i >= VGICD_ICFGR_X + PPI_ID_MAX / 16 * 0x04
-                && i < VGICD_ICFGR_X + (SPI_ID_MAX / 16) * 0x04 =>
+            idr if idr >= VGICD_ICFGR_X + PPI_ID_MAX / 16 * 0x04
+                && idr < VGICD_ICFGR_X + (SPI_ID_MAX / 16) * 0x04 =>
             {
-                return Ok(self.inner.lock().gicd_icfgr[(i - VGICD_ICFGR_X) / 4] as usize);
+                return Ok(self.inner.lock().gicd_icfgr[(idr - VGICD_ICFGR_X) / 4] as usize);
             }
             _ => {
                 error!("Unkonwn read addr: {:#x}", addr);
@@ -231,36 +241,64 @@ impl Vgic {
 
     pub(crate) fn handle_write8(&self, addr: usize, val: usize, vcpu: &dyn VCpuIf) {
         match addr {
-            // VGICD_CTLR => {
-            //     error!("ctrl emu");
-            //     // let curr_vcpu_id = call_interface!(VcpuIf::current_vcpu_id());
-            //     // error!("current vcpu id: {}", curr_vcpu_id);
-
-            //     // 这里只关心写入的最后两位，也就是 grp0 grp1
-            //     let mut vgic_inner = self.inner.lock();
-            //     vgic_inner.ctrlr = (val & 0b11) as u32;
-
-            //     if vgic_inner.ctrlr > 0 {
-            //         for i in SGI_ID_MAX..SPI_ID_MAX {
-            //             if vgic_inner.used_irq[i / 32] & (1 << (i % 32)) != 0 {
-            //                 GicInterface::set_enable(i, true);
-            //                 // 设置优先级为0
-            //                 GicInterface::set_priority(i, 0);
-            //             }
-            //         }
-            //     } else {
-            //         for i in SGI_ID_MAX..SPI_ID_MAX {
-            //             if vgic_inner.used_irq[i / 32] & (1 << (i % 32)) != 0 {
-            //                 GicInterface::set_enable(i, false);
-            //             }
-            //         }
-            //     }
-            //     // TODO: 告知其它PE开启或关闭相应中断
-            // }
-            // VGICD_ISENABLER_SGI_PPI..=VGICD_ISENABLER_SPI => {
-            //     self.handle_write32(addr, val, vcpu);
-            // }
-            // VGICD_ISENABLER_SPI..=VGICD_ICENABLER_SGI_PPI => {}
+            VGICD_CTRL => {
+                self.inner.lock().ctrlr = val as u32;
+                if val > 0 {
+                    for i in SGI_ID_MAX..SPI_ID_MAX {
+                        if self.inner.lock().used_irq[i / 32] & (1 << (i % 32)) != 0 {
+                            todo!("gic enable int");
+                        }
+                    }
+                } else {
+                    for i in SGI_ID_MAX..SPI_ID_MAX {
+                        if self.inner.lock().used_irq[i / 32] & (1 << (i % 32)) != 0 {
+                            todo!("gic enable int");
+                        }
+                    }
+                }
+            }
+            idr if idr >= VGICD_ISENABLER_X && idr < VGICD_ISPENDER_X => {
+                Self::handle_write32(&self, idr & !(0x3), val << (8 * (addr & 0x3)), vcpu);
+            }
+            idr if idr >= VGICD_IPRIORITYR_X && idr < VGICD_IPRIORITYR_X + PPI_ID_MAX => {
+                let id = vcpu.vcpu_id();
+                self.inner.lock().core_state[id].ppi_ipriorityr[idr - VGICD_IPRIORITYR_X] =
+                    val as u8;
+            }
+            idr if idr >= VGICD_IPRIORITYR_X + PPI_ID_MAX && idr < VGICD_IPRIORITYR_X + 0x400 => {
+                self.inner.lock().gicd_ipriorityr[idr - VGICD_IPRIORITYR_X] = val as u8;
+            }
+            idr if idr >= VGICD_SPENDSGIR_X && idr < VGICD_SPENDSGIR_X + SGI_ID_MAX => {
+                todo!("virtual_gic_send_software_int_inner")
+            }
+            idr if idr >= VGICD_IGROUPR_X && idr < VGICD_ISENABLER_X => {
+                error!("use group");
+            }
+            idr if idr >= VGICD_ICFGR_X + PPI_ID_MAX / 4
+                && idr < VGICD_ICFGR_X + SPI_ID_MAX / 4 =>
+            {
+                let i = (idr - VGICD_ICFGR_X) / 4;
+                self.inner.lock().gicd_icfgr[i] = val as u32 & 0x55;
+                for j in 0..4 {
+                    let id = self.inner.lock().vtop[i * 4 + j];
+                    if id > 0 {
+                        //let val = INW(GICD_ICFGR(id/16));
+                        // UW val = INW(GICD_ICFGR(id/16));
+                        // if(reg_value&(1 << (j*2+1))){
+                        //     val |= 1 << (id%16*2 + 1);
+                        // } else {
+                        //     val &= ~(1 << (id%16*2 + 1));
+                        // }
+                        // OUTW(GICD_ICFGR(id/16),val);
+                        trace!("ICFGR Read and Write");
+                    }
+                }
+            }
+            idr if idr >= VGICD_ITARGETSR_X + PPI_ID_MAX
+                && idr < VGICD_ITARGETSR_X + SPI_ID_MAX =>
+            {
+                self.inner.lock().gicd_itargetsr[idr - VGICD_ITARGETSR_X] = val as u8;
+            }
             _ => {
                 error!("Unkonwn write addr: {:#x}", addr);
             }
@@ -269,10 +307,35 @@ impl Vgic {
 
     pub(crate) fn handle_write16(&self, addr: usize, val: usize, vcpu: &dyn VCpuIf) {
         match addr {
-            // VGICD_CTLR => self.handle_write8(addr, val, vcpu),
-            // VGICD_ISENABLER_SGI_PPI..=VGICD_ISENABLER_SPI => {
-            //     self.handle_write32(addr, val, vcpu);
-            // }
+            VGICD_CTRL => {
+                Self::handle_write8(&self, addr, val, vcpu);
+            }
+            idr if idr >= VGICD_IPRIORITYR_X && idr < VGICD_IPRIORITYR_X + PPI_ID_MAX => {
+                Self::handle_write32(&self, idr & (!0x3), val << (8 * (addr & 0x3)), vcpu);
+            }
+            idr if idr >= VGICD_IPRIORITYR_X && idr < VGICD_IPRIORITYR_X + PPI_ID_MAX => {
+                let id = vcpu.vcpu_id();
+                self.inner.lock().core_state[id].ppi_ipriorityr[(idr - VGICD_IPRIORITYR_X) / 2] =
+                    val as u8;
+            }
+            idr if idr >= VGICD_IPRIORITYR_X + PPI_ID_MAX && idr < VGICD_IPRIORITYR_X + 0x400 => {
+                self.inner.lock().gicd_ipriorityr[(idr - VGICD_IPRIORITYR_X) / 2] = val as u8;
+            }
+            idr if idr >= VGICD_IGROUPR_X && idr < VGICD_ISENABLER_X => {
+                error!("use group");
+            }
+            idr if idr >= VGICD_ICFGR_X + PPI_ID_MAX / 4
+                && idr < VGICD_ICFGR_X + SPI_ID_MAX / 4 =>
+            {
+                for i in 0..2 {
+                    Self::handle_write8(&self, idr + i, (val >> (8 * i)) & 0xff, vcpu);
+                }
+            }
+            idr if idr >= VGICD_ITARGETSR_X + PPI_ID_MAX
+                && idr < VGICD_ITARGETSR_X + SPI_ID_MAX =>
+            {
+                self.inner.lock().gicd_itargetsr[(idr - VGICD_ITARGETSR_X) / 2] = val as u8;
+            }
             _ => {
                 error!("Unkonwn write addr: {:#x}", addr);
             }
@@ -290,10 +353,99 @@ impl Vgic {
                     if val & 1 << j != 0 {
                         let p = self.inner.lock().vtop[j];
                         if p >= 0 {
-                            self.inner.lock().used_irq[p / 32] != 1 << (p % 32);
+                            self.inner.lock().used_irq[(p / 32i32) as usize] |= 1 << (p % 32);
+                            if self.inner.lock().ctrlr != 0 {
+                                Self::gic_enable_int(
+                                    p as usize,
+                                    self.inner.lock().core_state[id].ppi_ipriorityr[j]
+                                        + self.inner.lock().real_pri,
+                                );
+                            }
                         }
                     }
                 }
+            }
+            idr if idr >= VGICD_ISENABLER_X + 0x04 && idr < VGICD_ICENABLER_X => {
+                let i = (idr - VGICD_ISENABLER_X) / 4;
+                self.inner.lock().gicd_isenabler[i] |= val as u32;
+
+                for j in 0..32 {
+                    if val & (1 << j) != 0 {
+                        let p = self.inner.lock().vtop[i * 32 + j];
+                        if p >= 0 {
+                            self.inner.lock().used_irq[(p / 32i32) as usize] |= 1 << (p % 32);
+                            todo!("gic enable int");
+                        }
+                    }
+                }
+            }
+            VGICD_ICENABLER_X => {
+                let id = vcpu.vcpu_id();
+                self.inner.lock().core_state[id].ppi_isenabler &= !(val as u32);
+
+                for j in 0..32 {
+                    if val & 1 << j != 0 {
+                        let p = self.inner.lock().vtop[j];
+                        if p >= 0 {
+                            self.inner.lock().used_irq[(p / 32i32) as usize] |= 1 << (p % 32);
+                            if self.inner.lock().ctrlr & 0x03 != 0 {
+                                // Gic Disable p
+                                debug!("Gic Diable {}", p);
+                            }
+                        }
+                    }
+                }
+            }
+            idr if idr >= VGICD_ICENABLER_X + 0x04 && idr < VGICD_ISPENDER_X + SPI_ID_MAX / 8 => {
+                let i = (idr - VGICD_ICENABLER_X) / 4;
+                self.inner.lock().gicd_isenabler[i] &= !(val as u32);
+                for j in 0..32 {
+                    if val & (1 << j) != 0 {
+                        let p = self.inner.lock().vtop[i * 32 + j];
+                        if p >= 0 {
+                            self.inner.lock().used_irq[(p / 32i32) as usize] &= !(1 << (p % 32));
+                            todo!("gic disable int");
+                        }
+                    }
+                }
+            }
+            idr if idr >= VGICD_IPRIORITYR_X && idr < VGICD_IPRIORITYR_X + PPI_ID_MAX => {
+                let id = vcpu.vcpu_id();
+                self.inner.lock().core_state[id].ppi_ipriorityr[(idr - VGICD_IPRIORITYR_X) / 4] =
+                    val as u8;
+            }
+            idr if idr >= VGICD_IPRIORITYR_X + PPI_ID_MAX
+                && idr < VGICD_IPRIORITYR_X + SPI_ID_MAX =>
+            {
+                self.inner.lock().gicd_ipriorityr[(idr - VGICD_IPRIORITYR_X) / 4] = val as u8;
+            }
+            idr if idr >= VGICD_ICFGR_X + PPI_ID_MAX / 4
+                && idr < VGICD_ICFGR_X + SPI_ID_MAX / 4 =>
+            {
+                for i in 0..4 {
+                    Self::handle_write8(&self, idr + i, (val >> (8 * i)) & 0xff, vcpu);
+                }
+            }
+            idr if idr >= VGICD_ITARGETSR_X + PPI_ID_MAX
+                && idr < VGICD_ITARGETSR_X + SPI_ID_MAX =>
+            {
+                self.inner.lock().gicd_itargetsr[(idr - VGICD_ITARGETSR_X) / 4] = val as u8;
+            }
+            idr if idr >= VGICD_ICPENDER_X + 0x04
+                && idr < VGICD_ICPENDER_X + (SPI_ID_MAX / 32) * 0x04 =>
+            {
+                let mut value = 0;
+                let idx = (idr - VGICD_ICPENDER_X) / 4;
+                for i in 0..self.vcpu_num {
+                    self.inner.lock().core_state[i].irq_no_mask[idx] &= val as u32;
+                    // for j in 0..GICH_LR_NUM {
+                    //     let lr = VGICH_LR_X + i * 4;
+                    //     if (lr & 1 << 28) != 0 && (lr & 0x1ff) / 32 == idx {
+                    //         todo!("Get LR for read");
+                    //     }
+                    // }
+                }
+                // return Ok(value as usize);
             }
             // VGICD_ICENABLER_SGI_PPI => {}
             // VGICD_ISENABLER_SGI_PPI..=VGICD_ISENABLER_SPI => {
@@ -303,5 +455,9 @@ impl Vgic {
                 error!("Unkonwn write addr: {:#x}", addr);
             }
         }
+    }
+
+    fn gic_enable_int(intvec: usize, pri: u8) {
+        todo!("gic enable int");
     }
 }

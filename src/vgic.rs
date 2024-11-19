@@ -352,14 +352,20 @@ impl Vgic {
                 for j in 0..32 {
                     if val & 1 << j != 0 {
                         let p = self.inner.lock().vtop[j];
+                        debug!("write32 addr: {:#x}, val: {:#x}", p, val);
                         if p >= 0 {
                             self.inner.lock().used_irq[(p / 32i32) as usize] |= 1 << (p % 32);
+                            debug!(
+                                "write32 addr: {:#x}, val: {:#x}",
+                                p,
+                                self.inner.lock().ctrlr
+                            );
                             if self.inner.lock().ctrlr != 0 {
-                                Self::gic_enable_int(
-                                    p as usize,
-                                    self.inner.lock().core_state[id].ppi_ipriorityr[j]
-                                        + self.inner.lock().real_pri,
-                                );
+                                // Self::gic_enable_int(
+                                //     p as usize,
+                                //     self.inner.lock().core_state[id].ppi_ipriorityr[j]
+                                //         + self.inner.lock().real_pri,
+                                // );
                             }
                         }
                     }

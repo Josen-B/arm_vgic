@@ -132,11 +132,30 @@ impl Vgic {
         vgic.real_pri = 0;
     }
 
+    // 注入中断
     pub fn inject(&self, vcpu: &dyn VCpuIf, int_id: usize) {
         let id = vcpu.vcpu_id();
+        let mut inner = self.inner.lock();
+
         if int_id < SGI_ID_MAX {
+            // 处理SGI（软件生成中断）
+            inner.core_state[id].pending_lr[int_id] = 1;
         } else if int_id < PPI_ID_MAX {
+            // 处理PPI（私有外围中断）
+            let ppi_id = int_id - SGI_ID_MAX;
+            inner.core_state[id].ppi_isenabler |= 1 << ppi_id;
         } else if int_id < SPI_ID_MAX {
+            // 处理SPI（共享外围中断）
+            let spi_id = int_id - PPI_ID_MAX;
+            inner.used_irq[spi_id / 32] |= 1 << (spi_id % 32);
+        } else {
+            // 无效的中断ID
+            error!("Invalid interrupt ID: {}", int_id);
+        }
+
+        // 触发中断处理
+        if inner.ctrlr != 0 {
+            Self::gic_enable_int(int_id, inner.real_pri);
         }
     }
 
